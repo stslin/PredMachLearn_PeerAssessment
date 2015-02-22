@@ -1,0 +1,213 @@
+---
+title: "Prediction Assignment Writeup"
+author: "S.T.S. Lin"
+date: "Sunday, February 22, 2015"
+output: html_document
+---
+
+## Background Introduction
+
+This is the written report part of the final project of Coursera’s MOOC Practical Machine Learning from Johns Hopkins University. Here is the background provided:
+"Using devices such as Jawbone Up, Nike FuelBand, and Fitbit it is now possible to collect a large amount of data about personal activity relatively inexpensively. These type of devices are part of the quantified self movement – a group of enthusiasts who take measurements about themselves regularly to improve their health, to find patterns in their behavior, or because they are tech geeks. One thing that people regularly do is quantify how much of a particular activity they do, but they rarely quantify how well they do it. In this project, your goal will be to use data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants. They were asked to perform barbell lifts correctly and incorrectly in 5 different ways. More information is available from the website here: http://groupware.les.inf.puc-rio.br/har (see the section on the Weight Lifting Exercise Dataset)."
+
+## Data Sources 
+
+The training data for this project are available here: 
+- https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv
+
+The test data are available here: 
+- https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv
+
+The data for this project come from this source: http://groupware.les.inf.puc-rio.br/har. If you use the document you create for this class for any purpose please cite them as they have been very generous in allowing their data to be used for this kind of assignment. 
+
+
+## Method
+- Clean up the data and select and remove columns that contain too much invalid or incomplete data (Steps 5 ~ 10).
+- Then determine whether Decision Tree (Steps 11 ~ 14) or Random Forests (Steps 15 ~ 17) should be used by choosing one with the lower out of sample error.
+- Use the choesen method (Decision Tree or Random Forest) to predict the test data.
+
+## Out of Sample error and Cross-validation
+The training data set is provided is seperated into 60% for training and 40% for interal testing in "Step 4".
+I expect the out of sample error to be well less than 20% (accuracy rate of 80% or higher) due to the extensive efforts put into cleaning up the data.
+Confusion Matrix  was used in Steps 14 and 17 to determine to accuracy rates (the opposite of error rates) with 0.8789 accuracy (1 - 0.8789 error) for Decision Tree and 0.9986 accuracy (1 - 0.9986 error) for Random Forests.
+
+
+## Data Proccessing
+
+0. Set system locale to English.
+```{r echo = TRUE}
+Sys.setlocale(category = "LC_ALL", locale = "English")
+```
+
+1. Load Libraries
+```{r echo = TRUE}
+if (!require("caret")) {
+  install.packages("caret")
+}
+
+if (!require("RGtk2")) {
+  install.packages("RGtk2")
+}
+
+if (!require("rattle")) {
+  install.packages("rattle")
+}
+
+if (!require("rpart")) {
+  install.packages("rpart")
+}
+
+if (!require("rpart.plot")) {
+  install.packages("rpart.plot")
+}
+
+if (!require("randomForest")) {
+  install.packages("randomForest")
+}
+
+if (!require("e1071")) {
+  install.packages("e1071")
+}
+
+
+require("caret")
+require("RGtk2")
+require("rattle")
+require("rpart")
+require("rpart.plot")
+require("randomForest")
+require("e1071")
+
+library(caret)
+library(RGtk2)
+library(rattle)
+library(rpart)
+library(rpart.plot)
+library(randomForest)
+library(e1071)
+```
+
+2. Set seed value
+```{r echo = TRUE}
+set.seed(12345)
+```
+
+3. Read data to memoruy.
+```{r echo = TRUE}
+dataTrain <- read.csv(file.path(getwd(), "pml-training.csv"), na.strings=c("NA","#DIV/0!",""))
+dataTest <- read.csv(file.path(getwd(), "pml-testing.csv"), na.strings=c("NA","#DIV/0!",""))
+```
+
+4. Partioning training data set into:
+- 60% for interal training (intTrain)
+- 40% for interal testing (intTest) a.k.a. Validation Testing
+```{r echo = TRUE}
+dataPartTrain <- createDataPartition(y=dataTrain$classe, p=0.6, list=FALSE)
+intTrain <- dataTrain[dataPartTrain, ]
+intTest <- dataTrain[-dataPartTrain, ]
+```
+
+## Cleaning The Data
+
+5. Generating list of NZV (Near Zero Variables) columns
+```{r echo = TRUE}
+intDataNZV <- nearZeroVar(dataTrain, saveMetrics=TRUE)
+intDataNZVList <- intDataNZV[intDataNZV$nzv,]
+```
+
+6. Removing the NZV (Near Zero Variables) columns from data:
+```{r echo = TRUE}
+intNZVColumns <- names(intTrain) %in% rownames(intDataNZVList)
+intTrain <- intTrain[!intNZVColumns]
+```
+
+7. Removing first column (ID) so that it does not interfer with ML Algorithms:
+```{r echo = TRUE}
+intTrain$X <- NULL
+```
+
+8. Remove columns that have too many NA values (more than a threshold of 60%)
+```{r echo = TRUE}
+intTrain <- intTrain[,colSums(is.na(intTrain)) < (nrow(intTrain)*0.6)]
+```
+
+9. Remove columns in test data that do not exist in training data
+```{r echo = TRUE}
+intTest <- intTest[, names(intTest) %in% names(intTrain)]
+dataTest <- dataTest[, names(dataTest) %in% names(intTrain)]
+```
+
+10. "Syncronize" the data type/category in the data and initTrain data frames.
+```{r echo = TRUE}
+dataTest$classe <- 0
+dataTest <- rbind(intTrain[1,] , dataTest)
+dataTest <- dataTest[-1,]
+dataTest$classe <- NULL
+```
+
+## Machine Learning - Decision Tree
+
+11. Apply decision tree machine learning.
+```{r echo = TRUE}
+modFitDT <- rpart(classe ~ ., data=intTrain, method="class")
+```
+
+12. View of the decision tree with fancy.
+```{r echo = TRUE}
+fancyRpartPlot(modFitDT)
+```
+
+13. Apply decision tree machine prediction.
+```{r echo = TRUE, warning=FALSE}
+predictionsDT <- predict(modFitDT, intTest, type = "class")
+```
+
+14. Test Results of decision tree with Confusion Matrix.
+```{r echo = TRUE}
+confusionMatrix(predictionsDT, intTest$classe)
+```
+
+## Machine Learning -  Random Forests
+
+15. Apply random forests machine learning.
+```{r echo = TRUE}
+modFitRF <- randomForest(classe ~. , data=intTrain)
+```
+
+16. Apply random forests machine prediction.
+```{r echo = TRUE}
+predictionsRF <- predict(modFitRF, intTest, type = "class")
+```
+
+17. Test Results of random forests with Confusion Matrix.
+```{r echo = TRUE}
+confusionMatrix(predictionsRF, intTest$classe)
+```
+
+## Predicting Test Data
+
+Confusion Matrix  was used in Steps 14 and 17 to determine to accuracy rates (the opposite of error rates) with 0.8789 accuracy (1 - 0.8789 error) for Decision Tree and 0.9986 accuracy (1 - 0.9986 error) for Random Forests.
+
+Thus, Random Forest is selected to predict the test data to to its lower out of sample error.
+```{r echo = TRUE}
+predictionsRF <- predict(modFitRF, dataTest, type = "class")
+```
+
+
+##  Generate Files with Predictions to Submit for Assignment:
+
+Provided by Assignment to Generate Solutions Files for Uploading
+```{r echo = TRUE}
+pml_write_files = function(x){
+  n = length(x)
+  for(i in 1:n){
+    filename = paste0("problem_id_",i,".txt")
+    write.table(x[i],file=filename,quote=FALSE,row.names=FALSE,col.names=FALSE)
+  }
+}
+```
+
+Call function Provided by Assignment to Generate Solutions Files for Uploading
+```{r echo = TRUE}
+pml_write_files(predictionsRF)
+```
